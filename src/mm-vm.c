@@ -169,151 +169,150 @@ int inc_vma_limit(struct pcb_t *caller, int vmaid, addr_t inc_sz)
   return 0;
 }
 
-// #endif
 
-/* -----------------------
-   Page management / swapping (@quocHuy)
-   ----------------------- */
+// /* -----------------------
+//    Page management / swapping (@quocHuy)
+//    ----------------------- */
    
-int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
-{
-  uint32_t pte;
-  addr_t tgtfpn = -1;
-  addr_t vicpgn = -1;
-  addr_t vicfpn;
-  addr_t swpfpn;
+// int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
+// {
+//   uint32_t pte;
+//   addr_t tgtfpn = -1;
+//   addr_t vicpgn = -1;
+//   addr_t vicfpn;
+//   addr_t swpfpn;
 
-  if (!caller || !caller->krnl) return -1;
+//   if (!caller || !caller->krnl) return -1;
 
-  /* read current PTE */
-  pte = pte_get_entry(caller, pgn);
+//   /* read current PTE */
+//   pte = pte_get_entry(caller, pgn);
 
-  /* if present in RAM -> just return fpn */
-  if (PAGING_PAGE_PRESENT(pte))
-  {
-    *fpn = PAGING_FPN(pte);
-    return 0;
-  }
+//   /* if present in RAM -> just return fpn */
+//   if (PAGING_PAGE_PRESENT(pte))
+//   {
+//     *fpn = PAGING_FPN(pte);
+//     return 0;
+//   }
 
-  /* page not present: need to bring it to RAM */
-  /* 1) Try to find a victim page to free RAM frame */
-  if (find_victim_page(caller->krnl->mm, &vicpgn) == -1)
-  {
-    /* If no victim list available, try to get a free frame directly */
-    if (MEMPHY_get_freefp(caller->krnl->mram, &tgtfpn) == -1)
-      return -1; /* no free RAM frame -> failure */
-  }
-  else
-  {
-    /* We have a victim page: get its PTE and FPN */
-    uint32_t vict_pte = pte_get_entry(caller, vicpgn);
+//   /* page not present: need to bring it to RAM */
+//   /* 1) Try to find a victim page to free RAM frame */
+//   if (find_victim_page(caller->krnl->mm, &vicpgn) == -1)
+//   {
+//     /* If no victim list available, try to get a free frame directly */
+//     if (MEMPHY_get_freefp(caller->krnl->mram, &tgtfpn) == -1)
+//       return -1; /* no free RAM frame -> failure */
+//   }
+//   else
+//   {
+//     /* We have a victim page: get its PTE and FPN */
+//     uint32_t vict_pte = pte_get_entry(caller, vicpgn);
 
-    if (!PAGING_PAGE_PRESENT(vict_pte))
-    {
-      /* unexpected: victim not present; fallback to free frame */
-      if (MEMPHY_get_freefp(caller->krnl->mram, &tgtfpn) == -1)
-        return -1;
-    }
-    else
-    {
-      vicfpn = PAGING_FPN(vict_pte);
+//     if (!PAGING_PAGE_PRESENT(vict_pte))
+//     {
+//       /* unexpected: victim not present; fallback to free frame */
+//       if (MEMPHY_get_freefp(caller->krnl->mram, &tgtfpn) == -1)
+//         return -1;
+//     }
+//     else
+//     {
+//       vicfpn = PAGING_FPN(vict_pte);
 
-      /* allocate a free frame on swap device */
-      if (MEMPHY_get_freefp(caller->krnl->active_mswp, &swpfpn) == -1)
-        return -1;
+//       /* allocate a free frame on swap device */
+//       if (MEMPHY_get_freefp(caller->krnl->active_mswp, &swpfpn) == -1)
+//         return -1;
 
-      /* copy victim frame RAM -> SWAP */
-      __swap_cp_page(caller->krnl->mram, vicfpn, caller->krnl->active_mswp, swpfpn);
+//       /* copy victim frame RAM -> SWAP */
+//       __swap_cp_page(caller->krnl->mram, vicfpn, caller->krnl->active_mswp, swpfpn);
 
-      /* update victim PTE as swapped (set swap offset) */
-      if (pte_set_swap(caller, vicpgn, 0 /*swp type*/, swpfpn) != 0)
-      {
-        /* rollback swap allocation */
-        MEMPHY_put_freefp(caller->krnl->active_mswp, swpfpn);
-        return -1;
-      }
+//       /* update victim PTE as swapped (set swap offset) */
+//       if (pte_set_swap(caller, vicpgn, 0 /*swp type*/, swpfpn) != 0)
+//       {
+//         /* rollback swap allocation */
+//         MEMPHY_put_freefp(caller->krnl->active_mswp, swpfpn);
+//         return -1;
+//       }
 
-      /* free victim RAM frame back to RAM free list */
-      MEMPHY_put_freefp(caller->krnl->mram, vicfpn);
+//       /* free victim RAM frame back to RAM free list */
+//       MEMPHY_put_freefp(caller->krnl->mram, vicfpn);
 
-      /* allocate a RAM frame for request */
-      if (MEMPHY_get_freefp(caller->krnl->mram, &tgtfpn) == -1)
-        return -1;
-    }
-  }
+//       /* allocate a RAM frame for request */
+//       if (MEMPHY_get_freefp(caller->krnl->mram, &tgtfpn) == -1)
+//         return -1;
+//     }
+//   }
 
-  /* 2) If requested page was swapped earlier -> bring from swap */
-  pte = pte_get_entry(caller, pgn);
-  if ( (pte & PAGING_PTE_SWAPPED_MASK) )
-  {
-    addr_t swp_offset = PAGING_SWP(pte);
-    /* copy from swap -> ram frame */
-    __swap_cp_page(caller->krnl->active_mswp, swp_offset, caller->krnl->mram, tgtfpn);
+//   /* 2) If requested page was swapped earlier -> bring from swap */
+//   pte = pte_get_entry(caller, pgn);
+//   if ( (pte & PAGING_PTE_SWAPPED_MASK) )
+//   {
+//     addr_t swp_offset = PAGING_SWP(pte);
+//     /* copy from swap -> ram frame */
+//     __swap_cp_page(caller->krnl->active_mswp, swp_offset, caller->krnl->mram, tgtfpn);
 
-    /* free swap frame (we reclaimed swap cell) */
-    MEMPHY_put_freefp(caller->krnl->active_mswp, swp_offset);
-  }
-  else
-  {
-    /* page is new / zero page: assume frame zeroed at MEMPHY init */
-  }
+//     /* free swap frame (we reclaimed swap cell) */
+//     MEMPHY_put_freefp(caller->krnl->active_mswp, swp_offset);
+//   }
+//   else
+//   {
+//     /* page is new / zero page: assume frame zeroed at MEMPHY init */
+//   }
 
-  /* 3) update PTE to mark present and set FPN */
-  if (pte_set_fpn(caller, pgn, tgtfpn) != 0)
-  {
-    /* cleanup on failure */
-    MEMPHY_put_freefp(caller->krnl->mram, tgtfpn);
-    return -1;
-  }
+//   /* 3) update PTE to mark present and set FPN */
+//   if (pte_set_fpn(caller, pgn, tgtfpn) != 0)
+//   {
+//     /* cleanup on failure */
+//     MEMPHY_put_freefp(caller->krnl->mram, tgtfpn);
+//     return -1;
+//   }
 
-  /* 4) track page in replacement structure */
-  enlist_pgn_node(&caller->krnl->mm->fifo_pgn, pgn);
+//   /* 4) track page in replacement structure */
+//   enlist_pgn_node(&caller->krnl->mm->fifo_pgn, pgn);
 
-  *fpn = tgtfpn;
-  return 0;
-}
+//   *fpn = tgtfpn;
+//   return 0;
+// }
 
-/*pg_getval - read a byte from virtual address 'addr' */
-int pg_getval(struct mm_struct *mm, int addr, BYTE *data, struct pcb_t *caller)
-{
-  int pgn = PAGING_PGN(addr);
-  int off = PAGING_OFFST(addr);
-  int fpn;
-  int phyaddr;
+// /*pg_getval - read a byte from virtual address 'addr' */
+// int pg_getval(struct mm_struct *mm, int addr, BYTE *data, struct pcb_t *caller)
+// {
+//   int pgn = PAGING_PGN(addr);
+//   int off = PAGING_OFFST(addr);
+//   int fpn;
+//   int phyaddr;
 
-  if (!caller || !data) return -1;
+//   if (!caller || !data) return -1;
 
-  if (pg_getpage(mm, pgn, &fpn, caller) != 0)
-    return -1;
+//   if (pg_getpage(mm, pgn, &fpn, caller) != 0)
+//     return -1;
 
-  phyaddr = (fpn << PAGING_ADDR_FPN_LOBIT) + off;
+//   phyaddr = (fpn << PAGING_ADDR_FPN_LOBIT) + off;
 
-  if (MEMPHY_read(caller->krnl->mram, phyaddr, data) != 0)
-    return -1;
+//   if (MEMPHY_read(caller->krnl->mram, phyaddr, data) != 0)
+//     return -1;
 
-  return 0;
-}
+//   return 0;
+// }
 
-/*pg_setval - write a byte to virtual address 'addr' */
-int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
-{
-  int pgn = PAGING_PGN(addr);
-  int off = PAGING_OFFST(addr);
-  int fpn;
-  int phyaddr;
+// /*pg_setval - write a byte to virtual address 'addr' */
+// int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
+// {
+//   int pgn = PAGING_PGN(addr);
+//   int off = PAGING_OFFST(addr);
+//   int fpn;
+//   int phyaddr;
 
-  if (!caller) return -1;
+//   if (!caller) return -1;
 
-  if (pg_getpage(mm, pgn, &fpn, caller) != 0)
-    return -1;
+//   if (pg_getpage(mm, pgn, &fpn, caller) != 0)
+//     return -1;
 
-  phyaddr = (fpn << PAGING_ADDR_FPN_LOBIT) + off;
+//   phyaddr = (fpn << PAGING_ADDR_FPN_LOBIT) + off;
 
-  if (MEMPHY_write(caller->krnl->mram, phyaddr, value) != 0)
-    return -1;
+//   if (MEMPHY_write(caller->krnl->mram, phyaddr, value) != 0)
+//     return -1;
 
-  /* Optionally mark dirty bit in PTE if needed (not strictly required here) */
-  return 0;
-}
+//   /* Optionally mark dirty bit in PTE if needed (not strictly required here) */
+//   return 0;
+// }
 
-// #endif
+// // #endif
