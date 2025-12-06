@@ -169,9 +169,8 @@ int inc_vma_limit(struct pcb_t *caller, int vmaid, addr_t inc_sz)
   return 0;
 }
 
-<<<<<<< HEAD
 // #endif
-=======
+
 /* -----------------------
    Page management / swapping (@quocHuy)
    ----------------------- */
@@ -318,4 +317,3 @@ int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
 }
 
 // #endif
->>>>>>> 4f3e558d48a24373e9cda39300f766aac8a2ead8
