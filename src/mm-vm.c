@@ -169,9 +169,8 @@ int inc_vma_limit(struct pcb_t *caller, int vmaid, addr_t inc_sz)
   return 0;
 }
 
-<<<<<<< HEAD
 // #endif
-=======
+
 /* -----------------------
    Page management / swapping (@quocHuy)
    ----------------------- */
