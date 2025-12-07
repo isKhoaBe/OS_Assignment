@@ -185,7 +185,12 @@ int liballoc(struct pcb_t *proc, addr_t size, uint32_t reg_index)
 #ifdef IODUMP
   printf("%s:%d\n",__func__,__LINE__);
 #ifdef PAGETBL_DUMP
-  print_pgtbl(proc, 0, -1); // print max TBL
+  if (proc->krnl && proc->krnl->mm && proc->krnl->mm->mmap) {
+    addr_t heap_end = proc->krnl->mm->mmap->sbrk;
+    if (heap_end > 0) {
+        print_pgtbl(proc, 0, heap_end - 1);
+    }
+}
 #endif
   //MEMPHY_dump(proc->krnl->mram);
 #endif
@@ -210,7 +215,12 @@ int libfree(struct pcb_t *proc, uint32_t reg_index)
 #ifdef IODUMP
   printf("%s:%d\n",__func__,__LINE__);
 #ifdef PAGETBL_DUMP
-  print_pgtbl(proc, 0, -1); // print max TBL
+  if (proc->krnl && proc->krnl->mm && proc->krnl->mm->mmap) {
+    addr_t heap_end = proc->krnl->mm->mmap->sbrk;
+    if (heap_end > 0) {
+        print_pgtbl(proc, 0, heap_end - 1);
+    }
+}
 #endif
   //MEMPHY_dump(proc->krnl->mram);
 #endif
@@ -387,7 +397,12 @@ int libread(
 #ifdef IODUMP
   printf("%s:%d\n",__func__,__LINE__);
 #ifdef PAGETBL_DUMP
-  print_pgtbl(proc, 0, -1); // print max TBL
+  if (proc->krnl && proc->krnl->mm && proc->krnl->mm->mmap) {
+    addr_t heap_end = proc->krnl->mm->mmap->sbrk;
+    if (heap_end > 0) {
+        print_pgtbl(proc, 0, heap_end - 1);
+    }
+}
 #endif
   //MEMPHY_dump(proc->krnl->mram);
 #endif
@@ -437,7 +452,12 @@ int libwrite(
 #ifdef IODUMP
   printf("%s:%d\n",__func__,__LINE__);
 #ifdef PAGETBL_DUMP
-  print_pgtbl(proc, 0, -1); // print max TBL
+  if (proc->krnl && proc->krnl->mm && proc->krnl->mm->mmap) {
+    addr_t heap_end = proc->krnl->mm->mmap->sbrk;
+    if (heap_end > 0) {
+        print_pgtbl(proc, 0, heap_end - 1);
+    }
+}
 #endif
   //MEMPHY_dump(proc->krnl->mram);
 #endif

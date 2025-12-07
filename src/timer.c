@@ -18,14 +18,21 @@ static int timer_started = 0;
 static int timer_stop = 0;
 
 
-static void * timer_routine(void * args) {
+static void * timer_routine(void * args) {//@hưng
 	while (!timer_stop) {
 		printf("Time slot %3llu\n", current_time());
 		int fsh = 0;
 		int event = 0;
+		
 		/* Wait for all devices have done the job in current
 		 * time slot */
 		struct timer_id_container_t * temp;
+		for (temp = dev_list; temp != NULL; temp = temp->next) {
+			pthread_mutex_lock(&temp->id.timer_lock);
+			temp->id.done = 0;
+			pthread_cond_signal(&temp->id.timer_cond);
+			pthread_mutex_unlock(&temp->id.timer_lock);
+		}
 		for (temp = dev_list; temp != NULL; temp = temp->next) {
 			pthread_mutex_lock(&temp->id.event_lock);
 			while (!temp->id.done && !temp->id.fsh) {
@@ -45,12 +52,7 @@ static void * timer_routine(void * args) {
 		_time++;
 		
 		/* Let devices continue their job */
-		for (temp = dev_list; temp != NULL; temp = temp->next) {
-			pthread_mutex_lock(&temp->id.timer_lock);
-			temp->id.done = 0;
-			pthread_cond_signal(&temp->id.timer_cond);
-			pthread_mutex_unlock(&temp->id.timer_lock);
-		}
+
 		if (fsh == event) {
 			break;
 		}
@@ -130,7 +132,3 @@ void stop_timer() {
 		free(temp);
 	}
 }
-
-
-
-

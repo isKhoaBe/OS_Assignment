@@ -152,9 +152,9 @@ void put_mlq_proc(struct pcb_t * proc) {
 	 *       It worth to protect by a mechanism.
 	 * 
 	 */
-	purgequeue(&running_list, proc);//@nguyên
 	//print_running_list("Yielded (Removed)", proc->pid);
 	pthread_mutex_lock(&queue_lock);
+	purgequeue(&running_list, proc);//@nguyên
 	enqueue(&mlq_ready_queue[proc->prio], proc);
 	pthread_mutex_unlock(&queue_lock);
 }
