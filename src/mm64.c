@@ -174,13 +174,10 @@ int pte_set_fpn(struct pcb_t *caller, addr_t pgn, addr_t fpn)
     struct mm_struct *mm = GET_MM(caller);
     if (!mm) return -1;
 
-    /* Compute indices from page number */
     get_pd_from_pagenum(pgn, &pgd_idx, &p4d_idx, &pud_idx, &pmd_idx, &pt_idx);
 
-    /* ✅ LOCK - Protect page table structure modification */
     pthread_mutex_lock(&pgtbl_lock);
 
-    /* Pointer to PGD base (array of addr_t) */
     addr_t *pgd_base = (addr_t *) mm->pgd;
     if (!pgd_base) {
         pthread_mutex_unlock(&pgtbl_lock);
@@ -235,7 +232,6 @@ int pte_set_fpn(struct pcb_t *caller, addr_t pgn, addr_t fpn)
     }
     addr_t *pt_base = (addr_t *) pmd_base[pmd_idx];
 
-    /* Now we have pt_base. Set PTE */
     pte = &pt_base[pt_idx];
     
     /* Set flags & FPN */
@@ -243,7 +239,6 @@ int pte_set_fpn(struct pcb_t *caller, addr_t pgn, addr_t fpn)
     CLRBIT(*pte, PAGING_PTE_SWAPPED_MASK);
     SETVAL(*pte, fpn, PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
 
-    /* ✅ UNLOCK */
     pthread_mutex_unlock(&pgtbl_lock);
     
 #else
