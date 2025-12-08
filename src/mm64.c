@@ -12,16 +12,13 @@
  * PAGING based Memory Management
  * Memory management unit mm/mm.c
  */
-#ifndef MM64
-#define MM64
-#endif
-
 #include "mm64.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #if defined(MM64)
 
@@ -33,7 +30,7 @@ extern struct krnl_t os;
 
 #define GET_MM(caller) ((caller)->krnl ? (caller)->krnl->mm : NULL)
 #define GET_MRAM(caller) ((caller)->krnl ? (caller)->krnl->mram : NULL)
-
+static pthread_mutex_t pgtbl_lock = PTHREAD_MUTEX_INITIALIZER;
 /*
  * init_pte - Initialize PTE entry
  */
@@ -170,47 +167,96 @@ int pte_set_swap(struct pcb_t *caller, addr_t pgn, int swptyp, addr_t swpoff)
  */
 int pte_set_fpn(struct pcb_t *caller, addr_t pgn, addr_t fpn)
 {
-  // @Khoa
+    addr_t *pte = NULL;
+    addr_t pgd_idx, p4d_idx, pud_idx, pmd_idx, pt_idx;
 
-  addr_t *pte = NULL;
-  addr_t pgd_idx, p4d_idx, pud_idx, pmd_idx, pt_idx;
-	
-#ifdef MM64	
-  // @Khoa
+#ifdef MM64
+    struct mm_struct *mm = GET_MM(caller);
+    if (!mm) return -1;
 
-  struct mm_struct *mm = GET_MM(caller);
-  if (!mm) return -1;
-  
-  get_pd_from_pagenum(pgn, &pgd_idx, &p4d_idx, &pud_idx, &pmd_idx, &pt_idx);
+    /* Compute indices from page number */
+    get_pd_from_pagenum(pgn, &pgd_idx, &p4d_idx, &pud_idx, &pmd_idx, &pt_idx);
 
-  addr_t *pgd_base = mm->pgd;
+    /* ✅ LOCK - Protect page table structure modification */
+    pthread_mutex_lock(&pgtbl_lock);
 
-  if (!pgd_base[pgd_idx]) return -1;
-  addr_t *p4d_base = (addr_t *)pgd_base[pgd_idx];
+    /* Pointer to PGD base (array of addr_t) */
+    addr_t *pgd_base = (addr_t *) mm->pgd;
+    if (!pgd_base) {
+        pthread_mutex_unlock(&pgtbl_lock);
+        return -1;
+    }
 
-  if (!p4d_base[p4d_idx]) return -1;
-  addr_t *pud_base = (addr_t *)p4d_base[p4d_idx];
-  
-  if (!pud_base[pud_idx]) return -1;
-  addr_t *pmd_base = (addr_t *)pud_base[pud_idx];
-  
-  if (!pmd_base[pmd_idx]) return -1;
-  addr_t *pt_base  = (addr_t *)pmd_base[pmd_idx];
-  
-  pte = &pt_base[pt_idx];
+    /* Ensure PGD entry (points to P4D table) */
+    if (pgd_base[pgd_idx] == 0) {
+        addr_t *alloc_table = malloc(PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+        if (!alloc_table) {
+            pthread_mutex_unlock(&pgtbl_lock);
+            return -1;
+        }
+        memset(alloc_table, 0, PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+        pgd_base[pgd_idx] = (addr_t) alloc_table;
+    }
+    addr_t *p4d_base = (addr_t *) pgd_base[pgd_idx];
+
+    /* Ensure P4D entry (points to PUD table) */
+    if (p4d_base[p4d_idx] == 0) {
+        addr_t *alloc_table = malloc(PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+        if (!alloc_table) {
+            pthread_mutex_unlock(&pgtbl_lock);
+            return -1;
+        }
+        memset(alloc_table, 0, PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+        p4d_base[p4d_idx] = (addr_t) alloc_table;
+    }
+    addr_t *pud_base = (addr_t *) p4d_base[p4d_idx];
+
+    /* Ensure PUD entry (points to PMD table) */
+    if (pud_base[pud_idx] == 0) {
+        addr_t *alloc_table = malloc(PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+        if (!alloc_table) {
+            pthread_mutex_unlock(&pgtbl_lock);
+            return -1;
+        }
+        memset(alloc_table, 0, PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+        pud_base[pud_idx] = (addr_t) alloc_table;
+    }
+    addr_t *pmd_base = (addr_t *) pud_base[pud_idx];
+
+    /* Ensure PMD entry (points to PT table) */
+    if (pmd_base[pmd_idx] == 0) {
+        addr_t *alloc_table = malloc(PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+        if (!alloc_table) {
+            pthread_mutex_unlock(&pgtbl_lock);
+            return -1;
+        }
+        memset(alloc_table, 0, PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+        pmd_base[pmd_idx] = (addr_t) alloc_table;
+    }
+    addr_t *pt_base = (addr_t *) pmd_base[pmd_idx];
+
+    /* Now we have pt_base. Set PTE */
+    pte = &pt_base[pt_idx];
+    
+    /* Set flags & FPN */
+    SETBIT(*pte, PAGING_PTE_PRESENT_MASK);
+    CLRBIT(*pte, PAGING_PTE_SWAPPED_MASK);
+    SETVAL(*pte, fpn, PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
+
+    /* ✅ UNLOCK */
+    pthread_mutex_unlock(&pgtbl_lock);
+    
 #else
-  struct krnl_t *krnl = caller->krnl;
-  pte = &krnl->mm->pgd[pgn];
+    struct krnl_t *krnl = caller->krnl;
+    pte = &krnl->mm->pgd[pgn];
+    
+    SETBIT(*pte, PAGING_PTE_PRESENT_MASK);
+    CLRBIT(*pte, PAGING_PTE_SWAPPED_MASK);
+    SETVAL(*pte, fpn, PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
 #endif
 
-  SETBIT(*pte, PAGING_PTE_PRESENT_MASK);
-  CLRBIT(*pte, PAGING_PTE_SWAPPED_MASK);
-
-  SETVAL(*pte, fpn, PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
-
-  return 0;
+    return 0;
 }
-
 
 /* Get PTE page table entry
  * @caller : caller
@@ -273,6 +319,7 @@ int vmap_pgd_memset(struct pcb_t *caller,           // process call
                     int pgnum)                      // num of mapping page
 {
   // @Khoa
+  printf("DEBUG: vmap_pgd_memset called with addr=%lx, pgnum=%d\n", addr, pgnum);
   
   struct mm_struct *mm = GET_MM(caller);
   if (!mm) return -1;
@@ -347,8 +394,10 @@ addr_t vmap_page_range(struct pcb_t *caller,           // process call
   for(pgit = 0; pgit < pgnum; pgit++) {
      if (fpit == NULL) break;
      
-     pte_set_fpn(caller, pgn + pgit, fpit->fpn);
-     
+  if (pte_set_fpn(caller, pgn + pgit, fpit->fpn) != 0) {
+       return -1; // Mapping failed
+     }
+
      enlist_pgn_node(&mm->fifo_pgn, pgn + pgit);
 
      fpit = fpit->fp_next;
@@ -581,31 +630,74 @@ int print_list_pgn(struct pgn_t *ip)
 
 int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
 {
-    addr_t pgn_start = start >> PAGING64_ADDR_PT_SHIFT;
-    addr_t pgn_end = end >> PAGING64_ADDR_PT_SHIFT;
-
-    // Giới hạn range
-    if (pgn_end < pgn_start || pgn_end - pgn_start > 1000) {
-        printf("PAGE TABLE: Invalid or too large range\n");
-        return -1;
+    struct mm_struct *mm = GET_MM(caller);
+    if (!mm || !mm->pgd) {
+        printf("print_pgtbl:\n (No mm or pgd)\n");
+        return 0;
     }
 
-    printf("PAGE TABLE DUMP (Virtual range: %lx - %lx)\n", start, end);
+    /* Check if there are any mapped pages */
+    if (mm->fifo_pgn == NULL) {
+        printf("print_pgtbl:\n (No mapped pages)\n");
+        return 0;
+    }
 
-    int count = 0;
-    for (addr_t pgn = pgn_start; pgn <= pgn_end && count < 100; pgn++) {
-        uint32_t pte = pte_get_entry(caller, pgn);
-        if (pte & PAGING_PTE_PRESENT_MASK) {
-            addr_t fpn = GETVAL(pte, PAGING_PTE_FPN_MASK, PAGING_PTE_FPN_LOBIT);
-            printf("  PGN: %lu -> FPN: %lu\n", pgn, fpn);
-            count++;
+    printf("print_pgtbl:\n");
+
+    /* Traverse FIFO list to find all mapped pages */
+    struct pgn_t *pgn_node = mm->fifo_pgn;
+    int found_mapping = 0;
+
+    while (pgn_node != NULL) {
+        addr_t pgn = pgn_node->pgn;
+        addr_t addr = pgn << 12; // Convert PGN to address
+
+        addr_t pgd_idx, p4d_idx, pud_idx, pmd_idx, pt_idx;
+        get_pd_from_pagenum(pgn, &pgd_idx, &p4d_idx, &pud_idx, &pmd_idx, &pt_idx);
+
+        addr_t *pgd_base = mm->pgd;
+        if (pgd_base[pgd_idx] == 0) {
+            pgn_node = pgn_node->pg_next;
+            continue;
         }
+
+        addr_t *p4d_base = (addr_t *)pgd_base[pgd_idx];
+        if (p4d_base[p4d_idx] == 0) {
+            pgn_node = pgn_node->pg_next;
+            continue;
+        }
+
+        addr_t *pud_base = (addr_t *)p4d_base[p4d_idx];
+        if (pud_base[pud_idx] == 0) {
+            pgn_node = pgn_node->pg_next;
+            continue;
+        }
+
+        addr_t *pmd_base = (addr_t *)pud_base[pud_idx];
+        if (pmd_base[pmd_idx] == 0) {
+            pgn_node = pgn_node->pg_next;
+            continue;
+        }
+
+        /* This PGN has valid page table structure */
+        if (!found_mapping) {
+            /* Print pointers only once for first valid mapping */
+            printf(" PDG=%llx P4g=%llx PUD=%llx PMD=%llx\n",
+                (unsigned long long)(uintptr_t)pgd_base,
+                (unsigned long long)(uintptr_t)p4d_base,
+                (unsigned long long)(uintptr_t)pud_base,
+                (unsigned long long)(uintptr_t)pmd_base
+            );
+            found_mapping = 1;
+        }
+
+        pgn_node = pgn_node->pg_next;
     }
-    
-    if (count == 0) {
-        printf("  (No mapped pages)\n");
+
+    if (!found_mapping) {
+        printf(" (No valid page table structure found)\n");
     }
-    
+
     return 0;
 }
 

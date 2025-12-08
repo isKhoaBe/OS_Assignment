@@ -185,12 +185,13 @@ int liballoc(struct pcb_t *proc, addr_t size, uint32_t reg_index)
 #ifdef IODUMP
   printf("%s:%d\n",__func__,__LINE__);
 #ifdef PAGETBL_DUMP
-  if (proc->krnl && proc->krnl->mm && proc->krnl->mm->mmap) {
-    addr_t heap_end = proc->krnl->mm->mmap->sbrk;
-    if (heap_end > 0) {
-        print_pgtbl(proc, 0, heap_end - 1);
-    }
+//@khoa
+if (proc->krnl && proc->krnl->mm) {
+    print_pgtbl(proc, 0, 0);
+} else {
+    printf("print_pgtbl:\n (No kernel mm)\n");
 }
+
 #endif
   //MEMPHY_dump(proc->krnl->mram);
 #endif
@@ -215,12 +216,13 @@ int libfree(struct pcb_t *proc, uint32_t reg_index)
 #ifdef IODUMP
   printf("%s:%d\n",__func__,__LINE__);
 #ifdef PAGETBL_DUMP
-  if (proc->krnl && proc->krnl->mm && proc->krnl->mm->mmap) {
-    addr_t heap_end = proc->krnl->mm->mmap->sbrk;
-    if (heap_end > 0) {
-        print_pgtbl(proc, 0, heap_end - 1);
-    }
+//@khoa
+if (proc->krnl && proc->krnl->mm) {
+    print_pgtbl(proc, 0, 0);
+} else {
+    printf("print_pgtbl:\n (No kernel mm)\n");
 }
+
 #endif
   //MEMPHY_dump(proc->krnl->mram);
 #endif
@@ -235,24 +237,29 @@ int libfree(struct pcb_t *proc, uint32_t reg_index)
  *
  */
 int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
-{//@hưng
-
+{
+  //@hung
+  //@khoa
+  
   uint32_t pte = pte_get_entry(caller, pgn);
 
-  if (!PAGING_PAGE_PRESENT(pte))
-  { /* Page is not online, make it actively living */
-    addr_t vicpgn, swpfpn;
-    addr_t vicfpn;
+  /* CASE 1: Page is already present in RAM */
+  if (PAGING_PAGE_PRESENT(pte) && !PAGING_PTE_SWP(pte))
+  { 
+    *fpn = PAGING_FPN(pte);
+    return 0;
+  }
+
+  /* CASE 2: Page is swapped out, need swap-in */
+  if (PAGING_PAGE_PRESENT(pte) && PAGING_PTE_SWP(pte))
+  {
+    addr_t swpfpn = PAGING_SWP(pte);
+    addr_t vicpgn, vicfpn, newram_fpn;
     uint32_t vicpte;
-//    addr_t vicpte;
     struct sc_regs regs;
 
-    /* TODO Initialize the target frame storing our variable */
-//  addr_t tgtfpn 
-
-    /* TODO: Play with your paging theory here */
-    /* Find victim page */
-    if (find_victim_page(caller->krnl->mm, &vicpgn) == -1)
+    /* Find victim page in RAM */
+    if (find_victim_page(mm, &vicpgn) == -1)
     {
       return -1;
     }
@@ -260,35 +267,86 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
     vicpte = pte_get_entry(caller, vicpgn);
     vicfpn = PAGING_FPN(vicpte);
 
-    /* Get free frame in MEMSWP */
-    if (MEMPHY_get_freefp(caller->krnl->active_mswp, &swpfpn) == -1)
+    /* Get free frame in SWAP to store victim */
+    addr_t new_swpfpn;
+    if (MEMPHY_get_freefp(caller->krnl->active_mswp, &new_swpfpn) == -1)
     {
       return -1;
     }
 
-    /* TODO: Implement swap frame from MEMRAM to MEMSWP and vice versa*/
-
-    /* TODO copy victim frame to swap 
-     * SWP(vicfpn <--> swpfpn)
-     * SYSCALL 1 sys_memmap
-     */
+    /* Swap victim RAM→SWAP */
     regs.a1 = SYSMEM_SWP_OP;
     regs.a2 = vicfpn;
-    regs.a3 = swpfpn;
+    regs.a3 = new_swpfpn;
     syscall(caller->krnl, caller->pid, 17, &regs);
 
-    /* Update page table */
-    //pte_set_swap(...);
-    pte_set_swap(caller, vicpgn, 0, swpfpn);
-    /* Update its online status of the target page */
-    //pte_set_fpn(...);
-    pte_set_fpn(caller, pgn, vicfpn);
+    /* Mark victim as swapped */
+    pte_set_swap(caller, vicpgn, 0, new_swpfpn);
 
-    enlist_pgn_node(&caller->krnl->mm->fifo_pgn, pgn);
+    /* Swap target SWAP→RAM */
+    regs.a1 = SYSMEM_SWP_OP;
+    regs.a2 = swpfpn;
+    regs.a3 = vicfpn;
+    syscall(caller->krnl, caller->pid, 17, &regs);
+
+    /* Mark target page as present */
+    pte_set_fpn(caller, pgn, vicfpn);
+    enlist_pgn_node(&mm->fifo_pgn, pgn);
+
+    /* Free swap frame */
+    MEMPHY_put_freefp(caller->krnl->active_mswp, swpfpn);
+
+    *fpn = vicfpn;
+    return 0;
   }
 
-  *fpn = PAGING_FPN(pte_get_entry(caller,pgn));
+  /* CASE 3: Page never mapped before (PTE=0) - allocate new frame */
+  addr_t new_fpn;
+  
+  /* Try to get free frame in RAM */
+  if (MEMPHY_get_freefp(caller->krnl->mram, &new_fpn) == 0)
+  {
+    pte_set_fpn(caller, pgn, new_fpn);
+    enlist_pgn_node(&mm->fifo_pgn, pgn);
+    
+    *fpn = new_fpn;
+    return 0;
+  }
 
+  /* No free RAM frame - need to evict victim */
+  addr_t vicpgn, vicfpn, swpfpn;
+  uint32_t vicpte;
+  struct sc_regs regs;
+
+  /* Find victim */
+  if (find_victim_page(mm, &vicpgn) == -1)
+  {
+    return -1;
+  }
+
+  vicpte = pte_get_entry(caller, vicpgn);
+  vicfpn = PAGING_FPN(vicpte);
+
+  /* Get free swap frame */
+  if (MEMPHY_get_freefp(caller->krnl->active_mswp, &swpfpn) == -1)
+  {
+    return -1;
+  }
+
+  /* Swap victim RAM→SWAP */
+  regs.a1 = SYSMEM_SWP_OP;
+  regs.a2 = vicfpn;
+  regs.a3 = swpfpn;
+  syscall(caller->krnl, caller->pid, 17, &regs);
+
+  /* Mark victim as swapped */
+  pte_set_swap(caller, vicpgn, 0, swpfpn);
+
+  /* Allocate freed frame to new page */
+  pte_set_fpn(caller, pgn, vicfpn);
+  enlist_pgn_node(&mm->fifo_pgn, pgn);
+
+  *fpn = vicfpn;
   return 0;
 }
 
@@ -338,7 +396,8 @@ int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
   int pgn = PAGING_PGN(addr);
   int off = PAGING_OFFST(addr);
   int fpn;
-
+  
+  // vmap_pgd_memset(caller, addr & ~(PAGING_PAGESZ - 1), 1);
   /* Get the page to MEMRAM, swap from MEMSWAP if needed */
   if (pg_getpage(mm, pgn, &fpn, caller) != 0)
     return -1; /* invalid page access */
@@ -397,12 +456,13 @@ int libread(
 #ifdef IODUMP
   printf("%s:%d\n",__func__,__LINE__);
 #ifdef PAGETBL_DUMP
-  if (proc->krnl && proc->krnl->mm && proc->krnl->mm->mmap) {
-    addr_t heap_end = proc->krnl->mm->mmap->sbrk;
-    if (heap_end > 0) {
-        print_pgtbl(proc, 0, heap_end - 1);
-    }
+//@khoa
+if (proc->krnl && proc->krnl->mm) {
+    print_pgtbl(proc, 0, 0);
+} else {
+    printf("print_pgtbl:\n (No kernel mm)\n");
 }
+
 #endif
   //MEMPHY_dump(proc->krnl->mram);
 #endif
@@ -452,11 +512,11 @@ int libwrite(
 #ifdef IODUMP
   printf("%s:%d\n",__func__,__LINE__);
 #ifdef PAGETBL_DUMP
-  if (proc->krnl && proc->krnl->mm && proc->krnl->mm->mmap) {
-    addr_t heap_end = proc->krnl->mm->mmap->sbrk;
-    if (heap_end > 0) {
-        print_pgtbl(proc, 0, heap_end - 1);
-    }
+//@khoa
+if (proc->krnl && proc->krnl->mm) {
+    print_pgtbl(proc, 0, 0);
+} else {
+    printf("print_pgtbl:\n (No kernel mm)\n");
 }
 #endif
   //MEMPHY_dump(proc->krnl->mram);

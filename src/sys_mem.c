@@ -12,6 +12,7 @@
 #include "syscall.h"
 #include "libmem.h"
 #include "queue.h"
+#include "sched.h"
 #include <stdlib.h>
 
 #ifdef MM64
@@ -41,19 +42,11 @@ int __sys_memmap(struct krnl_t *krnl, uint32_t pid, struct sc_regs* regs)
    /* TODO: Traverse proclist to terminate the proc
     *       stcmp to check the process match proc_name
     */
-    struct queue_t *run_list = krnl->running_list;
-    int i;
 
-    if (run_list != NULL) {
-       for (i = 0; i < run_list->size; i++) {
-           struct pcb_t *proc = run_list->proc[i];
-           if (proc != NULL && proc->pid == pid) {
-               caller = proc;
-               break;
-           }
-       }
-   }
-
+    //@Khoa
+    if (!caller || !caller->krnl) return -1;
+    
+    caller = find_proc(pid);
    /* Security: If process isn't running, it can't request memory */
    if (caller == NULL) {
        return -1;
