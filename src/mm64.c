@@ -395,7 +395,7 @@ addr_t vmap_page_range(struct pcb_t *caller,           // process call
      if (fpit == NULL) break;
      
   if (pte_set_fpn(caller, pgn + pgit, fpit->fpn) != 0) {
-       return -1; // Mapping failed
+       return -1;
      }
 
      enlist_pgn_node(&mm->fifo_pgn, pgn + pgit);
@@ -636,7 +636,6 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
         return 0;
     }
 
-    /* Check if there are any mapped pages */
     if (mm->fifo_pgn == NULL) {
         printf("print_pgtbl:\n (No mapped pages)\n");
         return 0;
@@ -644,13 +643,12 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
 
     printf("print_pgtbl:\n");
 
-    /* Traverse FIFO list to find all mapped pages */
     struct pgn_t *pgn_node = mm->fifo_pgn;
     int found_mapping = 0;
 
     while (pgn_node != NULL) {
         addr_t pgn = pgn_node->pgn;
-        addr_t addr = pgn << 12; // Convert PGN to address
+        addr_t addr = pgn << 12;
 
         addr_t pgd_idx, p4d_idx, pud_idx, pmd_idx, pt_idx;
         get_pd_from_pagenum(pgn, &pgd_idx, &p4d_idx, &pud_idx, &pmd_idx, &pt_idx);
@@ -681,7 +679,6 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
 
         /* This PGN has valid page table structure */
         if (!found_mapping) {
-            /* Print pointers only once for first valid mapping */
             printf(" PDG=%llx P4g=%llx PUD=%llx PMD=%llx\n",
                 (unsigned long long)(uintptr_t)pgd_base,
                 (unsigned long long)(uintptr_t)p4d_base,
