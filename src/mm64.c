@@ -28,9 +28,13 @@
 // @Khoa
 extern struct krnl_t os;
 
-#define GET_MM(caller) ((caller)->krnl ? (caller)->krnl->mm : NULL)
+#define GET_MM(caller) (caller->mm)
 #define GET_MRAM(caller) ((caller)->krnl ? (caller)->krnl->mram : NULL)
+
+/* Mutex lock declaration*/
 static pthread_mutex_t pgtbl_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t fifo_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t print_lock = PTHREAD_MUTEX_INITIALIZER;
 /*
  * init_pte - Initialize PTE entry
  */
@@ -128,23 +132,37 @@ int pte_set_swap(struct pcb_t *caller, addr_t pgn, int swptyp, addr_t swpoff)
   /* TODO Perform multi-level page mapping */
   struct mm_struct *mm = GET_MM(caller);
   if (!mm) return -1;
+
+  pthread_mutex_lock(&pgtbl_lock);
   
   get_pd_from_pagenum(pgn, &pgd_idx, &p4d_idx, &pud_idx, &pmd_idx, &pt_idx);
 
   addr_t *pgd_base = mm->pgd;
 
-  if (!pgd_base[pgd_idx]) return -1;
+  if (!pgd_base[pgd_idx]) {
+    pthread_mutex_unlock(&pgtbl_lock);
+    return -1;
+  }
+  
   addr_t *p4d_base = (addr_t *)pgd_base[pgd_idx];
-
-  if (!p4d_base[p4d_idx]) return -1;
+  if (!p4d_base[p4d_idx]) {
+    pthread_mutex_unlock(&pgtbl_lock);
+    return -1;
+  }
+  
   addr_t *pud_base = (addr_t *)p4d_base[p4d_idx];
-
-  if (!pud_base[pud_idx]) return -1;
+  if (!pud_base[pud_idx]) {
+    pthread_mutex_unlock(&pgtbl_lock);
+    return -1;
+  }
+  
   addr_t *pmd_base = (addr_t *)pud_base[pud_idx];
+  if (!pmd_base[pmd_idx]) {
+    pthread_mutex_unlock(&pgtbl_lock);
+    return -1;
+  }
 
-  if (!pmd_base[pmd_idx]) return -1;
   addr_t *pt_base = (addr_t *)pmd_base[pmd_idx];
-
   pte = &pt_base[pt_idx];
 #else
   struct krnl_t *krnl = caller->krnl;
@@ -156,7 +174,9 @@ int pte_set_swap(struct pcb_t *caller, addr_t pgn, int swptyp, addr_t swpoff)
 
   SETVAL(*pte, swptyp, PAGING_PTE_SWPTYP_MASK, PAGING_PTE_SWPTYP_LOBIT);
   SETVAL(*pte, swpoff, PAGING_PTE_SWPOFF_MASK, PAGING_PTE_SWPOFF_LOBIT);
-
+#ifdef MM64
+  pthread_mutex_unlock(&pgtbl_lock);
+#endif
   return 0;
 }
 
@@ -319,7 +339,7 @@ int vmap_pgd_memset(struct pcb_t *caller,           // process call
   struct mm_struct *mm = GET_MM(caller);
   if (!mm) return -1;
   
-  addr_t *pgd_base, *p4d_base, *pud_base, *pmd_base, *pt_base;
+  addr_t *pgd_base, *p4d_base, *pud_base, *pmd_base;
   addr_t pgd_idx, p4d_idx, pud_idx, pmd_idx, pt_idx;
   int pgit;
   addr_t vaddr = addr;
@@ -552,11 +572,20 @@ int enlist_vm_rg_node(struct vm_rg_struct **rglist, struct vm_rg_struct *rgnode)
 
 int enlist_pgn_node(struct pgn_t **plist, addr_t pgn)
 {
+  pthread_mutex_lock(&fifo_lock);
+
   struct pgn_t *pnode = malloc(sizeof(struct pgn_t));
+
+  if (!pnode) {
+        pthread_mutex_unlock(&fifo_lock);
+        return -1;
+    }
 
   pnode->pgn = pgn;
   pnode->pg_next = *plist;
   *plist = pnode;
+
+  pthread_mutex_unlock(&fifo_lock);
 
   return 0;
 }
@@ -636,14 +665,15 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
         return 0;
     }
 
-    printf("print_pgtbl:\n");
+    //printf("print_pgtbl:\n");
+    pthread_mutex_lock(&print_lock);
+    printf("print_pgtbl (PID %d):\n", caller->pid);
 
     struct pgn_t *pgn_node = mm->fifo_pgn;
     int found_mapping = 0;
 
     while (pgn_node != NULL) {
         addr_t pgn = pgn_node->pgn;
-        addr_t addr = pgn << 12;
 
         addr_t pgd_idx, p4d_idx, pud_idx, pmd_idx, pt_idx;
         get_pd_from_pagenum(pgn, &pgd_idx, &p4d_idx, &pud_idx, &pmd_idx, &pt_idx);
@@ -672,7 +702,6 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
             continue;
         }
 
-        /* This PGN has valid page table structure */
         if (!found_mapping) {
             printf(" PDG=%llx P4g=%llx PUD=%llx PMD=%llx\n",
                 (unsigned long long)(uintptr_t)pgd_base,
@@ -689,7 +718,8 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
     if (!found_mapping) {
         printf(" (No valid page table structure found)\n");
     }
-
+    
+    pthread_mutex_unlock(&print_lock);
     return 0;
 }
 

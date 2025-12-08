@@ -23,43 +23,20 @@
 
 //typedef char BYTE;
 
-int __sys_memmap(struct krnl_t *krnl, uint32_t pid, struct sc_regs* regs)
-{//@hưng
-   int memop = regs->a1;
-   BYTE value;
-   
-   /* TODO THIS DUMMY CREATE EMPTY PROC TO AVOID COMPILER NOTIFY 
-    *      need to be eliminated
-	*/
-   /*struct pcb_t *caller = malloc(sizeof(struct pcb_t));*/
-   struct pcb_t *caller = NULL;
-
-   /*
-    * @bksysnet: Please note in the dual spacing design
-    *            syscall implementations are in kernel space.
-    */
-
-   /* TODO: Traverse proclist to terminate the proc
-    *       stcmp to check the process match proc_name
-    */
-
-    //@Khoa
-    if (!caller || !caller->krnl) return -1;
-    
-    caller = find_proc(pid);
-   /* Security: If process isn't running, it can't request memory */
-   if (caller == NULL) {
+int __sys_memmap(struct pcb_t *caller, struct sc_regs* regs)
+{
+    //@hưng
+    //@khoa
+   if (caller == NULL || caller->krnl == NULL) {
        return -1;
    }
-
-    /* TODO Maching and marking the process */
-    /* user process are not allowed to access directly pcb in kernel space of syscall */
-    //....
+   int memop = regs->a1;
+   BYTE value;
 	
    switch (memop) {
    case SYSMEM_MAP_OP:
             /* Reserved process case*/
-			vmap_pgd_memset(caller, regs->a2, regs->a3);
+			//vmap_pgd_memset(caller, regs->a2, regs->a3);
             break;
    case SYSMEM_INC_OP:
             inc_vma_limit(caller, regs->a2, regs->a3);

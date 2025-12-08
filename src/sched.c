@@ -186,21 +186,6 @@ void add_proc(struct pcb_t * proc) {
 	return add_mlq_proc(proc);
 }
 
-// @khoa
-struct pcb_t *find_proc(uint32_t pid) {
-    struct pcb_t *found = NULL;
-    pthread_mutex_lock(&queue_lock);
-    for (int i = 0; i < running_list.size; i++) {
-        struct pcb_t *proc = running_list.proc[i];
-        if (proc != NULL && proc->pid == pid) {
-            found = proc;
-            break;
-        }
-    }
-    pthread_mutex_unlock(&queue_lock);
-    return found;
-}
-
 #else
 struct pcb_t * get_proc(void) {
 	struct pcb_t * proc = NULL;

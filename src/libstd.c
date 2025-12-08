@@ -33,5 +33,7 @@ int libsyscall (struct pcb_t *caller,
    regs.a2 = a2;
    regs.a3 = a3;
 
-   return syscall(caller->krnl, caller->pid, syscall_idx, &regs);
+   //@khoa
+   // return syscall(caller->krnl, caller->pid, syscall_idx, &regs);
+   return syscall(caller, syscall_idx, &regs);
 }

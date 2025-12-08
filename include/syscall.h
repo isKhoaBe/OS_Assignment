@@ -38,6 +38,7 @@ extern const int syscall_table_size;
 /* libsyscall interface */
 int __mm_swap_page(struct pcb_t *, addr_t , addr_t);
 int libsyscall(struct pcb_t*, uint32_t, arg_t, arg_t, arg_t);
-int syscall(struct krnl_t*, uint32_t, uint32_t, struct sc_regs*);
-int __sys_ni_syscall(struct krnl_t*, struct sc_regs*);
-
+//int syscall(struct krnl_t*, uint32_t, uint32_t, struct sc_regs*);
+int syscall(struct pcb_t *caller, uint32_t syscall_num, struct sc_regs* regs);
+//int __sys_ni_syscall(struct krnl_t*, struct sc_regs*);
+int __sys_ni_syscall(struct pcb_t *caller, struct sc_regs*);

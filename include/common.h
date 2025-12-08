@@ -112,6 +112,7 @@ struct pcb_t
 #endif
 	struct krnl_t *krnl;	
 	struct page_table_t *page_table; // Page table
+	struct mm_struct *mm;
 	uint32_t bp;			 // Break pointer
 };
 

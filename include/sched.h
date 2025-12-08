@@ -25,8 +25,5 @@ void add_proc(struct pcb_t * proc);
 
 void finish_proc(struct pcb_t * proc); //@nguyên
 
-// @Khoa
-struct pcb_t *find_proc(uint32_t pid);
-
 #endif
 
