@@ -397,7 +397,6 @@ int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
   int off = PAGING_OFFST(addr);
   int fpn;
   
-  // vmap_pgd_memset(caller, addr & ~(PAGING_PAGESZ - 1), 1);
   /* Get the page to MEMRAM, swap from MEMSWAP if needed */
   if (pg_getpage(mm, pgn, &fpn, caller) != 0)
     return -1; /* invalid page access */
