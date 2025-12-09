@@ -15,6 +15,8 @@
 #include "sched.h"
 #include <stdlib.h>
 
+extern struct pcb_t *find_proc(struct krnl_t *krnl, uint32_t pid);
+
 #ifdef MM64
 #include "mm64.h"
 #else
@@ -23,15 +25,18 @@
 
 //typedef char BYTE;
 
-int __sys_memmap(struct pcb_t *caller, struct sc_regs* regs)
+int __sys_memmap(struct krnl_t *krnl, uint32_t pid, struct sc_regs* regs)
 {
     //@hưng
     //@khoa
-   if (caller == NULL || caller->krnl == NULL) {
+ int memop = regs->a1;
+ BYTE value;
+ struct pcb_t *caller = find_proc(krnl, pid);
+ //struct pcb_t *caller = NULL;
+
+   if (caller == NULL) {
        return -1;
    }
-   int memop = regs->a1;
-   BYTE value;
 	
    switch (memop) {
    case SYSMEM_MAP_OP:

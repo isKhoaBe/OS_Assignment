@@ -128,8 +128,13 @@ static void * ld_routine(void * args) {
 //@khoa
 		// krnl->mm = malloc(sizeof(struct mm_struct));
 		// init_mm(krnl->mm, proc);
+
+		// struct mm_struct *new_mm = malloc(sizeof(struct mm_struct));
+		// init_mm(new_mm, proc);
+
 		proc->mm = malloc(sizeof(struct mm_struct));
 		init_mm(proc->mm, proc);
+		
 		krnl->mram = mram;
 		krnl->mswp = mswp;
 		krnl->active_mswp = active_mswp;
@@ -254,7 +259,7 @@ int main(int argc, char * argv[]) {
 #endif
 
 	/* Init scheduler */
-	init_scheduler();
+	init_scheduler(&os);
 
 	/* Run CPU and loader */
 #ifdef MM_PAGING

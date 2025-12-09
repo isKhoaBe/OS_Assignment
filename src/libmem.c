@@ -114,7 +114,7 @@ int __alloc(struct pcb_t *caller, int vmaid, int rgid, addr_t size, addr_t *allo
   regs.a3 = PAGING_PAGE_ALIGNSZ(size);
 #endif  
   /* SYSCALL 17 sys_memmap */
-  if (syscall(caller, 17, &regs) == -1) {
+  if (syscall(caller->krnl, caller->pid, 17, &regs) == -1) {
       pthread_mutex_unlock(&mmvm_lock);
       return -1; // Allocation failed
   }
@@ -260,7 +260,7 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
             regs.a1 = SYSMEM_SWP_OP;
             regs.a2 = swpfpn;
             regs.a3 = vicfpn;
-            syscall(caller, 17, &regs);
+            syscall(caller->krnl, caller->pid, 17, &regs);
 
             /* Map target pgn -> vicfpn (pte_set_fpn should clear swapped bit) */
             if (pte_set_fpn(caller, pgn, vicfpn) != 0) {
@@ -291,7 +291,7 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
         regs.a1 = SYSMEM_SWP_OP;
         regs.a2 = vicfpn;
         regs.a3 = new_swpfpn;
-        syscall(caller, 17, &regs);
+        syscall(caller->krnl, caller->pid, 17, &regs);
 
         /* mark victim as swapped (and not present) */
         pte_set_swap(caller, vicpgn, 0, new_swpfpn);
@@ -300,7 +300,7 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
         regs.a1 = SYSMEM_SWP_OP;
         regs.a2 = swpfpn;
         regs.a3 = vicfpn;
-        syscall(caller, 17, &regs);
+        syscall(caller->krnl, caller->pid, 17, &regs);
 
         /* set target pte to vicfpn (present) */
         if (pte_set_fpn(caller, pgn, vicfpn) != 0) {
@@ -350,7 +350,7 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
         regs.a1 = SYSMEM_SWP_OP;
         regs.a2 = vicfpn;
         regs.a3 = swpfpn;
-        syscall(caller, 17, &regs);
+        syscall(caller->krnl, caller->pid, 17, &regs);
 
         /* mark victim swapped */
         pte_set_swap(caller, vicpgn, 0, swpfpn);
@@ -394,7 +394,7 @@ int pg_getval(struct mm_struct *mm, int addr, BYTE *data, struct pcb_t *caller)
   regs.a2 = phyaddr;
   regs.a3 = 0; // Output placeholder
 
-  if (syscall(caller, 17, &regs) == 0) {
+  if (syscall(caller->krnl, caller->pid, 17, &regs) == 0) {
       *data = (BYTE)regs.a3; // Get result from register
       return 0;
   }
@@ -431,7 +431,7 @@ int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller)
   regs.a2 = phyaddr;
   regs.a3 = (int)value;
 
-  if (syscall(caller, 17, &regs) == 0) {
+  if (syscall(caller->krnl, caller->pid, 17, &regs) == 0) {
       return 0;
   }
   return -1;

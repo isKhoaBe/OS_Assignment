@@ -11,9 +11,7 @@
 #include "syscall.h"
 #include "common.h"
 
-//#define __SYSCALL(nr, sym) extern int __##sym(struct krnl_t*, uint32_t,struct sc_regs*);
-//#define __SYSCALL(nr, sym) case nr: return __##sym(caller, regs);
-#define __SYSCALL(nr, sym) extern int __##sym(struct pcb_t *caller, struct sc_regs* regs);
+#define __SYSCALL(nr, sym) extern int __##sym(struct krnl_t *krnl, uint32_t pid, struct sc_regs* regs);
 #include "syscalltbl.lst"
 #undef  __SYSCALL
 
@@ -28,18 +26,13 @@ const char* sys_call_table[] = {
 #undef  __SYSCALL
 const int syscall_table_size = sizeof(sys_call_table)/sizeof(char*);
 
-//@khoa
-
-/* Structure modified */
-/*
 int __sys_ni_syscall(struct krnl_t *krnl, struct sc_regs *regs)
 {
    return 0;
 }
-*/
 
-/* Structure modified */
-/*
+#define __SYSCALL(nr, sym) case nr: return __##sym(krnl,pid,regs);
+
 int syscall(struct krnl_t *krnl, uint32_t pid, uint32_t nr, struct sc_regs* regs)
 {
 	switch (nr) {
@@ -47,23 +40,3 @@ int syscall(struct krnl_t *krnl, uint32_t pid, uint32_t nr, struct sc_regs* regs
 	default: return __sys_ni_syscall(krnl, regs);
 	}
 };
-*/
-
-int __sys_ni_syscall(struct pcb_t *caller, struct sc_regs *regs)
-{
-   /*
-    * DUMMY systemcall
-    */
-   return 0;
-}
-
-//#define __SYSCALL(nr, sym) case nr: return __##sym(krnl,pid,regs);
-#define __SYSCALL(nr, sym) case nr: return __##sym(caller, regs);
-
-int syscall(struct pcb_t *caller, uint32_t nr, struct sc_regs* regs)                 // <--- THÊM
-{
-    switch (nr) {
-        #include "syscalltbl.lst"
-        default: return __sys_ni_syscall(caller, regs);
-    }
-}
