@@ -67,7 +67,10 @@ static void * cpu_routine(void * args) {
 				id ,proc->pid);
 
 			finish_proc(proc);//@nguyên
-			free(proc);
+
+			//free(proc);
+			proc->code->size = 0;
+
 			proc = get_proc();
 			time_left = 0;
 		}else if (time_left == 0) {
@@ -92,6 +95,12 @@ static void * cpu_routine(void * args) {
 			printf("\tCPU %d: Dispatched process %2d\n",
 				id, proc->pid);
 			time_left = time_slot;
+		}
+
+		if (proc->code == NULL || proc->code->size == 0) {
+			proc = NULL;
+			next_slot(timer_id);
+			continue;
 		}
 		
 		/* Run current process */
