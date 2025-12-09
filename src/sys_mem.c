@@ -8,12 +8,12 @@
  * for the sole purpose of studying while attending the course CO2018.
  */
 
-#include "os-mm.h"
-#include "syscall.h"
 #include "libmem.h"
+#include "os-mm.h"
 #include "queue.h"
-#include "sched.h"
+#include "syscall.h"
 #include <stdlib.h>
+#include "sched.h"
 
 extern struct pcb_t *find_proc(struct krnl_t *krnl, uint32_t pid);
 
