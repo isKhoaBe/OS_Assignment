@@ -527,12 +527,20 @@ int init_mm(struct mm_struct *mm, struct pcb_t *caller)
   struct vm_area_struct *vma0 = malloc(sizeof(struct vm_area_struct));
   // @Khoa
 
-   mm->pgd = malloc(PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
-   memset(mm->pgd, 0, PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+    mm->pgd = malloc(PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
+    memset(mm->pgd, 0, PAGING64_TABLE_ENTRIES * PAGING64_ENTRY_SIZE);
     mm->p4d = NULL;
     mm->pud = NULL;
     mm->pmd = NULL;
     mm->pt  = NULL;
+
+    mm->fifo_pgn = NULL;
+
+    for (int i = 0; i < PAGING_MAX_SYMTBL_SZ; i++) {
+        mm->symrgtbl[i].rg_start = 0;
+        mm->symrgtbl[i].rg_end = 0;
+        mm->symrgtbl[i].rg_next = NULL;
+    }
 
   /* By default the owner comes with at least one vma */
   vma0->vm_id = 0;
@@ -660,20 +668,22 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
         return 0;
     }
 
+    pthread_mutex_lock(&print_lock);
+    
     if (mm->fifo_pgn == NULL) {
-        printf("print_pgtbl:\n (No mapped pages)\n");
+        pthread_mutex_unlock(&print_lock);
         return 0;
     }
 
-    //printf("print_pgtbl:\n");
-    pthread_mutex_lock(&print_lock);
     printf("print_pgtbl (PID %d):\n", caller->pid);
 
     struct pgn_t *pgn_node = mm->fifo_pgn;
     int found_mapping = 0;
+    int page_count = 0;
 
     while (pgn_node != NULL) {
         addr_t pgn = pgn_node->pgn;
+        page_count++;
 
         addr_t pgd_idx, p4d_idx, pud_idx, pmd_idx, pt_idx;
         get_pd_from_pagenum(pgn, &pgd_idx, &p4d_idx, &pud_idx, &pmd_idx, &pt_idx);
@@ -703,11 +713,12 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
         }
 
         if (!found_mapping) {
-            printf(" PDG=%llx P4g=%llx PUD=%llx PMD=%llx\n",
+            printf(" PDG=%llx P4g=%llx PUD=%llx PMD=%llx (%d pages)\n",
                 (unsigned long long)(uintptr_t)pgd_base,
                 (unsigned long long)(uintptr_t)p4d_base,
                 (unsigned long long)(uintptr_t)pud_base,
-                (unsigned long long)(uintptr_t)pmd_base
+                (unsigned long long)(uintptr_t)pmd_base,
+                page_count
             );
             found_mapping = 1;
         }
@@ -716,7 +727,7 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
     }
 
     if (!found_mapping) {
-        printf(" (No valid page table structure found)\n");
+        printf(" (Page tables allocated but no valid mappings)\n");
     }
     
     pthread_mutex_unlock(&print_lock);
